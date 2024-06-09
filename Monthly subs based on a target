@@ -1,0 +1,121 @@
+/**
+ * ActiveSponsorshipSummary Component
+ *
+ * This component fetches and displays the total value and count of active monthly sponsorships
+ * for the current profile. It also fetches and displays the monthly fundraising goal from the
+ * profile's custom fields and calculates the percentage of the goal that has been achieved.
+
+ * IMPORTANT - to do this Ive created a field in the profile called "monthlyHubFundraisingGoal", you probably want your own thing. But this is to show how to get part way there without spending thousands on a developer. 
+ *
+ * Props:
+ * - global: Object containing global state, including current profile and campaign information.
+ *
+ * State:
+ * - totalAmount: The total value of active monthly sponsorships.
+ * - subscriptionCount: The count of active monthly sponsorships.
+ * - monthlyGoal: The monthly fundraising goal (in cents).
+ * - loading: A boolean indicating if data is being loaded.
+ * - error: An error object if any error occurs during data fetching.
+ */
+
+(RaiselyComponents, React) => {
+	const { api, Common } = RaiselyComponents;
+	const { useEffect, useState } = React;
+
+	function ActiveSponsorshipSummary(props) {
+		const [totalAmount, setTotalAmount] = useState(0);
+		const [subscriptionCount, setSubscriptionCount] = useState(0);
+		const [monthlyGoal, setMonthlyGoal] = useState(0);
+		const [loading, setLoading] = useState(true);
+		const [error, setError] = useState(null);
+
+		useEffect(() => {
+			const fetchSponsorships = async () => {
+				try {
+					const profile = props.global?.current?.profile;
+					const profileUuid = profile?.uuid;
+
+					if (!profileUuid) {
+						setLoading(false);
+						return;
+					}
+
+					// Fetch donations
+					const donationResponse = await api.donations.getAll({
+						query: {
+							profile: profileUuid,
+							subscriptionStatus: 'active',
+							limit: 1000,
+						}
+					});
+
+					if (!donationResponse || !donationResponse.data || !donationResponse.data.data) {
+						setLoading(false);
+						return;
+					}
+
+					const donations = donationResponse.data.data;
+
+					if (!Array.isArray(donations)) {
+						setLoading(false);
+						return;
+					}
+
+					const activeSubscriptions = donations.filter(donation => donation.subscriptionUuid);
+					const total = activeSubscriptions.reduce((sum, donation) => sum + donation.amount, 0);
+					setTotalAmount(total);
+					setSubscriptionCount(activeSubscriptions.length);
+
+					// Fetch profile custom fields
+					const profileResponse = await api.profiles.get({
+						id: profileUuid,
+					});
+
+					if (profileResponse && profileResponse.data && profileResponse.data.data) {
+						const customFields = profileResponse.data.data.public || {};
+						const monthlyGoal = (customFields.monthlyHubFundraisingGoal || 0) * 100; // Convert to cents
+						console.log("Custom Fields:", customFields); // Debugging log
+						console.log("Monthly Goal:", monthlyGoal);  // Debugging log
+						setMonthlyGoal(monthlyGoal);
+					}
+				} catch (error) {
+					setError(error);
+				} finally {
+					setLoading(false);
+				}
+			};
+
+			fetchSponsorships();
+		}, [props.global?.current?.profile?.uuid]);
+
+		if (loading) {
+			return <p>Loading...</p>;
+		}
+
+		if (error) {
+			return <p>Error: {error.message}</p>;
+		}
+
+		const percentage = monthlyGoal ? ((totalAmount / monthlyGoal) * 100).toFixed(2) : 0;
+
+		return (
+			<div className="active-sponsorship-summary">
+				<h4 className="active-sponsorship-summary__title">Active Monthly Sponsorships</h4>
+				<p className="active-sponsorship-summary__value">
+					<strong>Total Value:</strong> {Common.displayCurrency(totalAmount, props.global.campaign.currency)}
+				</p>
+				<p className="active-sponsorship-summary__count">
+					<strong>Number of Active Sponsorships:</strong> {subscriptionCount}
+				</p>
+				<p className="active-sponsorship-summary__goal">
+					<strong>Monthly Goal:</strong> {Common.displayCurrency(monthlyGoal, props.global.campaign.currency)}
+				</p>
+				<p className="active-sponsorship-summary__percentage">
+					<strong>Percentage of Goal Achieved:</strong> {percentage}%
+				</p>
+			</div>
+		);
+	}
+
+	return ActiveSponsorshipSummary;
+};
